@@ -1,0 +1,1969 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jujutsu Shenanigans Web - Arena Shibuya (60 FPS + Shift-Lock)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    
+    <!-- ====================================================================== -->
+    <!-- ARQUIVO 1: style.css (Estilos Visuais, HUD e Mira Shift-Lock)          -->
+    <!-- ====================================================================== -->
+    <style id="style-css-source">
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #06040a;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .anime-font {
+            font-family: 'Bangers', cursive;
+            letter-spacing: 2px;
+        }
+        /* Efeito de vinheta e atmosfera amaldiçoada */
+        #vignette {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle, rgba(0,0,0,0) 58%, rgba(10, 4, 24, 0.85) 100%);
+            z-index: 10;
+            transition: box-shadow 0.15s ease;
+        }
+        .black-flash-screen {
+            box-shadow: inset 0 0 120px 40px rgba(255, 0, 55, 0.85) !important;
+        }
+        .hollow-purple-screen {
+            box-shadow: inset 0 0 140px 50px rgba(168, 85, 247, 0.85) !important;
+        }
+        /* Estilo dos Slots estilo Roblox Jujutsu Shenanigans */
+        .skill-slot {
+            position: relative;
+            width: 68px;
+            height: 68px;
+            background: rgba(15, 17, 26, 0.88);
+            border: 2px solid rgba(147, 51, 234, 0.5);
+            border-radius: 10px;
+            overflow: hidden;
+            transition: transform 0.1s ease, border-color 0.1s ease;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.6);
+        }
+        .skill-slot.active-press {
+            transform: scale(0.9);
+            border-color: #38bdf8;
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.8);
+        }
+        .cooldown-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 0%;
+            background: rgba(220, 38, 38, 0.65);
+            transition: height 0.05s linear;
+            pointer-events: none;
+        }
+        /* Texto flutuante de Dano / Black Flash */
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            font-weight: 900;
+            text-shadow: 0 3px 10px rgba(0,0,0,0.95);
+            animation: floatUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            z-index: 25;
+        }
+        @keyframes floatUp {
+            0% { transform: translate(-50%, -50%) scale(0.4); opacity: 1; }
+            30% { transform: translate(-50%, -90%) scale(1.25); opacity: 1; }
+            100% { transform: translate(-50%, -160%) scale(0.9); opacity: 0; }
+        }
+        /* Mira Trava-Shift (Shift-Lock) idêntica ao Roblox */
+        #crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 15;
+            transition: all 0.12s ease;
+        }
+        .crosshair-free {
+            width: 8px;
+            height: 8px;
+            border: 2px solid rgba(255, 255, 255, 0.45);
+            border-radius: 50%;
+        }
+        .crosshair-shiftlock {
+            width: 22px;
+            height: 22px;
+            border: 2.5px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.95), inset 0 0 6px rgba(56, 189, 248, 0.8);
+        }
+        .crosshair-shiftlock::before,
+        .crosshair-shiftlock::after {
+            content: '';
+            position: absolute;
+            background: #ffffff;
+        }
+        .crosshair-shiftlock::before {
+            top: 50%;
+            left: -6px;
+            right: -6px;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+        .crosshair-shiftlock::after {
+            left: 50%;
+            top: -6px;
+            bottom: -6px;
+            width: 2px;
+            transform: translateX(-50%);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Efeito de Vinheta e Mira Shift-Lock -->
+    <div id="vignette"></div>
+    <div id="crosshair" class="crosshair-free"></div>
+    <div id="floating-container" class="fixed inset-0 pointer-events-none z-20 overflow-hidden"></div>
+
+    <!-- Barra de Vida Flutuante do Boneco de Treino (Maldição) -->
+    <div id="dummy-hud" class="fixed pointer-events-none z-20 hidden transform -translate-x-1/2 -translate-y-full">
+        <div class="bg-gray-950/90 border border-red-500/60 px-3 py-1.5 rounded-lg shadow-xl min-w-[150px]">
+            <div class="flex justify-between items-center text-[11px] font-bold text-red-300 mb-1">
+                <span>MALDIÇÃO DE TREINO</span>
+                <span id="dummy-hp-text">500 / 500</span>
+            </div>
+            <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden p-[1px]">
+                <div id="dummy-hp-bar" class="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full transition-all duration-100" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD Principal Topo Esquerdo: Controles e Status do Shift-Lock -->
+    <div class="fixed top-4 left-4 z-20 flex flex-col gap-2 max-w-xs sm:max-w-sm pointer-events-auto">
+        <div class="bg-slate-950/90 border border-purple-500/40 p-3.5 rounded-xl shadow-2xl text-slate-100">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+                <div>
+                    <h1 class="anime-font text-2xl text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-purple-400 to-pink-500 leading-none">
+                        JUJUTSU SHENANIGANS 3D
+                    </h1>
+                    <p class="text-[11px] text-slate-400 font-semibold">Shibuya à Noite (Motor Otimizado 60 FPS)</p>
+                </div>
+                <span id="shiftlock-badge" class="px-2 py-0.5 text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-600 rounded-md">
+                    SHIFT-LOCK: OFF
+                </span>
+            </div>
+
+            <div class="text-xs space-y-1 text-slate-300">
+                <p><strong class="text-amber-400">SHIFT</strong> Ativar/Desativar <strong>Trava-Shift (Shift-Lock)</strong></p>
+                <p><strong class="text-sky-400">WASD</strong> Andar (Strafe Lateral no Shift-Lock) | <strong class="text-sky-400">ESPAÇO</strong> Pular</p>
+                <p><strong class="text-red-400">CLIQUE ESQ (M1)</strong> Combo 4x (<span class="text-red-500 font-bold">4º = KOKUSEN!</span>)</p>
+                <p><strong class="text-purple-400">TECLA Q</strong> Dash Amaldiçoado | <strong class="text-emerald-400">R</strong> Regenerar Rua</p>
+            </div>
+
+            <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+                <span class="text-slate-400">Destruição: <strong id="destroyed-count" class="text-amber-400">0%</strong></span>
+                <button id="btn-shift-lock" class="px-2.5 py-1 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-bold rounded-md transition text-[11px] shadow">
+                    Alternar Shift-Lock (SHIFT)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD Topo Direito: Medidor de FPS, Frustum Culling e Botão dos 3 Arquivos -->
+    <div class="fixed top-4 right-4 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+        <div class="bg-slate-950/90 border border-emerald-500/40 px-3.5 py-2 rounded-xl shadow-xl text-right">
+            <div class="flex items-center gap-3">
+                <div>
+                    <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Performance</div>
+                    <div class="text-sm font-black text-emerald-400"><span id="fps-counter">60</span> FPS</div>
+                </div>
+                <div class="h-6 w-[1px] bg-slate-800"></div>
+                <div>
+                    <div class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Renderizados na Visão</div>
+                    <div class="text-xs font-extrabold text-sky-300"><span id="visible-counter">0/0</span> Objetos</div>
+                </div>
+            </div>
+        </div>
+
+        <button onclick="openCodeModal()" class="px-3.5 py-2 bg-purple-700 hover:bg-purple-600 active:scale-95 text-white font-extrabold text-xs rounded-xl border border-purple-400/50 shadow-lg flex items-center gap-2 transition">
+            <span>📂</span> Ver / Baixar em 3 Arquivos (HTML, CSS, JS)
+        </button>
+    </div>
+
+    <!-- Contador de Combo / Kokusen no lado direito -->
+    <div id="combo-panel" class="fixed right-6 top-1/3 z-20 pointer-events-none opacity-0 transition-all duration-200 transform translate-x-6">
+        <div class="text-right">
+            <div id="combo-number" class="anime-font text-6xl text-sky-400 drop-shadow-[0_4px_12px_rgba(56,189,248,0.8)]">3 HITS</div>
+            <div id="combo-label" class="text-xs font-black tracking-widest uppercase text-purple-300 bg-slate-950/80 px-2.5 py-1 rounded border border-purple-500/40 inline-block">
+                ENERGIA FLUINDO!
+            </div>
+        </div>
+    </div>
+
+    <!-- Mensagem Central de Golpe Especial -->
+    <div id="Technique-Banner" class="fixed top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none opacity-0 transition-all duration-300 transform scale-75 text-center">
+        <div id="banner-sub" class="text-xs font-extrabold tracking-[0.25em] text-purple-300 uppercase mb-0.5">TÉCNICA AMALDIÇOADA</div>
+        <div id="banner-main" class="anime-font text-4xl sm:text-5xl text-white px-6 py-1.5 rounded-xl bg-slate-950/90 border-2 border-purple-500 shadow-[0_0_35px_rgba(168,85,247,0.8)]">
+            VAZIO ROXO (HOLLOW PURPLE)
+        </div>
+    </div>
+
+    <!-- HUD Inferior (Estilo Jujutsu Shenanigans) -->
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center w-full max-w-xl px-4 pointer-events-auto">
+        <div class="w-full max-w-md mb-2.5 bg-slate-950/90 border border-slate-800 p-2.5 rounded-xl shadow-xl">
+            <div class="flex justify-between items-center text-xs font-extrabold mb-1">
+                <span class="text-emerald-400 tracking-wide">FEITICEIRO JUJUTSU (VOCÊ)</span>
+                <span id="player-hp-text" class="text-slate-300">100 / 100 HP</span>
+            </div>
+            <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-800 mb-2">
+                <div id="player-hp-bar" class="h-full bg-gradient-to-r from-emerald-500 to-green-400 rounded-full transition-all duration-200" style="width: 100%;"></div>
+            </div>
+
+            <div class="flex justify-between items-center text-[10px] font-extrabold mb-0.5">
+                <span class="text-purple-400 tracking-wider uppercase">ENERGIA AMALDIÇOADA / DESPERTAR</span>
+                <span id="awakening-text" class="text-sky-300">100%</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-purple-900/50">
+                <div id="awakening-bar" class="h-full bg-gradient-to-r from-sky-500 via-purple-500 to-pink-500 rounded-full transition-all duration-200" style="width: 100%;"></div>
+            </div>
+        </div>
+
+        <!-- Slots de Habilidades -->
+        <div class="flex items-center justify-center gap-2 sm:gap-3">
+            <div id="slot-m1" onclick="triggerM1()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-sky-400">
+                <span class="text-[10px] font-black bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded self-start border border-sky-400/30">M1</span>
+                <div class="text-center my-auto text-lg">👊</div>
+                <span class="text-[9px] font-bold text-slate-200 leading-tight text-center">Punho + Kokusen</span>
+            </div>
+
+            <div id="slot-1" onclick="useSkill1()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-sky-400">
+                <div id="cd-1" class="cooldown-overlay"></div>
+                <span class="text-[10px] font-black bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded self-start border border-purple-400/30">1</span>
+                <div class="text-center my-auto text-lg">⚡</div>
+                <span class="text-[9px] font-bold text-slate-200 leading-tight text-center">Punho Divergente</span>
+            </div>
+
+            <div id="slot-2" onclick="useSkill2()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-sky-400">
+                <div id="cd-2" class="cooldown-overlay"></div>
+                <span class="text-[10px] font-black bg-purple-500/30 text-purple-200 px-1.5 py-0.5 rounded self-start border border-purple-400/30">2</span>
+                <div class="text-center my-auto text-lg">🌀</div>
+                <span class="text-[9px] font-bold text-slate-200 leading-tight text-center">Lapso: Azul</span>
+            </div>
+
+            <div id="slot-3" onclick="useSkill3()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-purple-400">
+                <div id="cd-3" class="cooldown-overlay"></div>
+                <span class="text-[10px] font-black bg-pink-500/30 text-pink-200 px-1.5 py-0.5 rounded self-start border border-pink-400/30">3</span>
+                <div class="text-center my-auto text-lg">🟣</div>
+                <span class="text-[9px] font-bold text-slate-200 leading-tight text-center">Vazio Roxo</span>
+            </div>
+
+            <div id="slot-q" onclick="triggerDash()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-sky-400">
+                <div id="cd-q" class="cooldown-overlay"></div>
+                <span class="text-[10px] font-black bg-sky-500/30 text-sky-200 px-1.5 py-0.5 rounded self-start border border-sky-400/30">Q</span>
+                <div class="text-center my-auto text-lg">💨</div>
+                <span class="text-[9px] font-bold text-slate-200 leading-tight text-center">Passo Rápido</span>
+            </div>
+
+            <div id="slot-r" onclick="resetArena()" class="skill-slot cursor-pointer flex flex-col justify-between p-1.5 select-none hover:border-emerald-400 border-emerald-500/40">
+                <span class="text-[10px] font-black bg-emerald-500/30 text-emerald-200 px-1.5 py-0.5 rounded self-start border border-emerald-400/30">R</span>
+                <div class="text-center my-auto text-lg">♻️</div>
+                <span class="text-[9px] font-bold text-emerald-200 leading-tight text-center">Regenerar Rua</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Visualizar e Copiar os 3 Arquivos Separados (index.html, style.css, game.js) -->
+    <div id="code-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-purple-500/50 rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-3.5 bg-slate-950 border-b border-slate-800">
+                <div>
+                    <h2 class="text-base font-black text-white">Arquivos Separados do Projeto (HTML + CSS + JS)</h2>
+                    <p class="text-xs text-slate-400">Salve os 3 arquivos na mesma pasta no seu PC para rodar localmente!</p>
+                </div>
+                <button onclick="closeCodeModal()" class="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg">
+                    Fechar (ESC)
+                </button>
+            </div>
+
+            <div class="flex items-center justify-between px-5 py-2.5 bg-slate-900 border-b border-slate-800">
+                <div class="flex gap-2">
+                    <button onclick="switchCodeTab('html')" id="tab-html" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-purple-600 text-white">1. index.html</button>
+                    <button onclick="switchCodeTab('css')" id="tab-css" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-slate-800 text-slate-300 hover:bg-slate-700">2. style.css</button>
+                    <button onclick="switchCodeTab('js')" id="tab-js" class="px-3 py-1.5 rounded-lg text-xs font-extrabold bg-slate-800 text-slate-300 hover:bg-slate-700">3. game.js</button>
+                </div>
+                <button onclick="copyActiveCode()" id="btn-copy-code" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold rounded-lg shadow">
+                    📋 Copiar Arquivo Atual
+                </button>
+            </div>
+
+            <div class="p-4 flex-1 overflow-auto bg-slate-950">
+                <pre id="code-display" class="text-xs text-sky-300 font-mono whitespace-pre-wrap select-all"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================== -->
+    <!-- ARQUIVO 3: game.js (Motor 3D Otimizado, Frustum Culling e Shift-Lock)  -->
+    <!-- ====================================================================== -->
+    <script id="game-js-source">
+        // ============================================================================
+        // 1. SISTEMA DE ÁUDIO SINTETIZADO (WEB AUDIO API)
+        // ============================================================================
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            try {
+                initAudio();
+                if (!audioCtx) return;
+                const now = audioCtx.currentTime;
+
+                if (type === 'punch') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(160, now);
+                    osc.frequency.exponentialRampToValueAtTime(38, now + 0.14);
+                    gain.gain.setValueAtTime(0.4, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.15);
+                } else if (type === 'blackflash') {
+                    const osc = audioCtx.createOscillator();
+                    const osc2 = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc2.type = 'square';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(24, now + 0.5);
+                    osc2.frequency.setValueAtTime(95, now);
+                    osc2.frequency.exponentialRampToValueAtTime(18, now + 0.5);
+                    gain.gain.setValueAtTime(0.65, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+                    osc.connect(gain);
+                    osc2.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc2.start(now);
+                    osc.stop(now + 0.55);
+                    osc2.stop(now + 0.55);
+                } else if (type === 'blue') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(120, now);
+                    osc.frequency.exponentialRampToValueAtTime(480, now + 0.35);
+                    osc.frequency.exponentialRampToValueAtTime(90, now + 0.65);
+                    gain.gain.setValueAtTime(0.35, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.65);
+                } else if (type === 'purple') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(65, now);
+                    osc.frequency.linearRampToValueAtTime(190, now + 0.3);
+                    osc.frequency.exponentialRampToValueAtTime(28, now + 1.3);
+                    gain.gain.setValueAtTime(0.6, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 1.35);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 1.35);
+                } else if (type === 'break') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(120 + Math.random() * 50, now);
+                    osc.frequency.exponentialRampToValueAtTime(28, now + 0.2);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.21);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.21);
+                } else if (type === 'dash') {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(340, now);
+                    osc.frequency.exponentialRampToValueAtTime(85, now + 0.16);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.16);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.16);
+                }
+            } catch (e) {}
+        }
+
+        // ============================================================================
+        // 2. VARIÁVEIS GLOBAIS, FRUSTUM CULLING E GEOMETRIAS COMPARTILHADAS (60 FPS)
+        // ============================================================================
+        let scene, camera, renderer, clock;
+        let playerGroup, leftArmPivot, rightArmPivot, leftLegPivot, rightLegPivot;
+        let leftHandAura, rightHandAura;
+        let dummyGroup, dummyMesh;
+
+        // Sistema de Frustum Culling (estilo Roblox / Minecraft: só renderiza onde você olha!)
+        const frustum = new THREE.Frustum();
+        const projScreenMatrix = new THREE.Matrix4();
+        const cullableObjects = []; // Prédios, postes, objetos destrutíveis
+
+        // Medidor de FPS
+        let frameCount = 0;
+        let fpsLastTime = performance.now();
+
+        // Geometrias compartilhadas para evitar lag de memória
+        const sharedBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const sharedParticleGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+
+        const destructibles = [];
+        const debrisList = [];
+        const particles = [];
+        const shockwaves = [];
+        const projectiles = [];
+        const flickeringLamps = [];
+
+        // Estado do Jogador
+        const player = {
+            pos: new THREE.Vector3(0, 0, 18),
+            vel: new THREE.Vector3(0, 0, 0),
+            rotY: Math.PI,
+            speed: 14.5,
+            onGround: true,
+            hp: 100,
+            maxHp: 100,
+            comboCount: 0,
+            lastAttackTime: 0,
+            attackAnimTimer: 0,
+            attackHand: 'right',
+            isDashing: false,
+            dashTimer: 0
+        };
+
+        // Estado do Boneco de Treino Amaldiçoado
+        const dummy = {
+            pos: new THREE.Vector3(0, 0, -4),
+            vel: new THREE.Vector3(0, 0, 0),
+            hp: 500,
+            maxHp: 500,
+            hitFlashTimer: 0
+        };
+
+        // Cooldowns das Habilidades
+        const cooldowns = {
+            1: { max: 3.5, current: 0 },
+            2: { max: 5.5, current: 0 },
+            3: { max: 9.0, current: 0 },
+            q: { max: 1.6, current: 0 }
+        };
+
+        // Controle de Câmera e TRAVA-SHIFT (SHIFT-LOCK)
+        const camControl = {
+            yaw: 0,
+            pitch: 0.28,
+            distance: 13.0,
+            shiftLock: false, // Quando TRUE, câmera fica sobre o ombro e trava rotação do personagem!
+            shakeTimer: 0,
+            shakeIntensity: 0,
+            isDragging: false,
+            prevMouseX: 0,
+            prevMouseY: 0
+        };
+
+        const keys = {};
+        let totalPropsCount = 0;
+
+        // Textura procedural para fachada inteira de prédio (substitui centenas de janelas 3D pesadas!)
+        function createBuildingFacadeTexture(buildingColorHex, accentHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = buildingColorHex;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const rows = 8;
+            const cols = 4;
+            const padX = 10;
+            const padY = 12;
+            const winW = (canvas.width - padX * (cols + 1)) / cols;
+            const winH = (canvas.height - padY * (rows + 1)) / rows;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const rand = Math.random();
+                    if (rand < 0.22) {
+                        ctx.fillStyle = rand < 0.09 ? accentHex : '#fbbf24';
+                    } else {
+                        ctx.fillStyle = '#07080d';
+                    }
+                    ctx.fillRect(padX + c * (winW + padX), padY + r * (winH + padY), winW, winH);
+                }
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        // Textura para os Letreiros Neon em Japonês
+        function createNeonTexture(text, textColor, bgColor, borderColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = 8;
+            ctx.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
+
+            ctx.fillStyle = textColor;
+            ctx.font = '900 44px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const chars = text.split('');
+            const step = (canvas.height - 40) / chars.length;
+            chars.forEach((ch, idx) => {
+                ctx.fillText(ch, canvas.width / 2, 32 + idx * step);
+            });
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // Registrar objeto no sistema de Frustum Culling (Renderização por Visão)
+        function registerCullable(object3D, boundingRadius = 8, maxDist = 115) {
+            const sphere = new THREE.Sphere(new THREE.Vector3(), boundingRadius);
+            cullableObjects.push({
+                obj: object3D,
+                sphere: sphere,
+                radius: boundingRadius,
+                maxDistSq: maxDist * maxDist
+            });
+        }
+
+        // Inicializar Mundo 3D Super Otimizado
+        function initWorld() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x06040d);
+            scene.fog = new THREE.FogExp2(0x090514, 0.013);
+
+            camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 130);
+
+            // Renderer configurado para máxima taxa de FPS (sem shadowMap pesado e pixelRatio enxuto)
+            renderer = new THREE.WebGLRenderer({
+                antialias: false,
+                powerPreference: 'high-performance',
+                precision: 'mediump'
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
+            renderer.shadowMap.enabled = false;
+            document.body.appendChild(renderer.domElement);
+
+            clock = new THREE.Clock();
+
+            setupLighting();
+            buildAbandonedStreet();
+            buildJujutsuPlayer();
+            buildCursedDummy();
+            spawnDestructibleProps();
+            setupControls();
+        }
+
+        function setupLighting() {
+            // Apenas 2 luzes globais super leves (Zero PointLights dinâmicas pesadas!)
+            const hemiLight = new THREE.HemisphereLight(0x4c3585, 0x110e1c, 0.85);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0x8da2fb, 0.75);
+            dirLight.position.set(25, 55, -20);
+            scene.add(dirLight);
+
+            // Lua Brilhante no Céu Noturno
+            const moonMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(6.5, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0xe9d5ff })
+            );
+            moonMesh.position.set(50, 78, -95);
+            scene.add(moonMesh);
+        }
+
+        // Construir a Rua Abandonada Otimizada (com Chunks para Frustum Culling)
+        function buildAbandonedStreet() {
+            // 1. Asfalto Principal e Calçadas
+            const road = new THREE.Mesh(
+                new THREE.PlaneGeometry(24, 140),
+                new THREE.MeshLambertMaterial({ color: 0x13141c })
+            );
+            road.rotation.x = -Math.PI / 2;
+            scene.add(road);
+
+            const sidewalkGeo = new THREE.BoxGeometry(10, 0.35, 140);
+            const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0x232530 });
+
+            const leftSidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat);
+            leftSidewalk.position.set(-17, 0.175, 0);
+            scene.add(leftSidewalk);
+
+            const rightSidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat);
+            rightSidewalk.position.set(17, 0.175, 0);
+            scene.add(rightSidewalk);
+
+            // 2. Faixas de Pedestres
+            const stripeMat = new THREE.MeshBasicMaterial({ color: 0x9ca3af });
+            const stripeGeo = new THREE.BoxGeometry(1.1, 0.04, 4.2);
+            for (let zOffset of [-22, 22]) {
+                const crosswalkGroup = new THREE.Group();
+                crosswalkGroup.position.set(0, 0.02, zOffset);
+                for (let x = -9; x <= 9; x += 2.2) {
+                    const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                    stripe.position.x = x;
+                    crosswalkGroup.add(stripe);
+                }
+                scene.add(crosswalkGroup);
+                registerCullable(crosswalkGroup, 12, 95);
+            }
+
+            // 3. Prédios com Texturas Otimizadas (1 Mesh por Prédio em vez de 80 janelas separadas!)
+            const facadeTex1 = createBuildingFacadeTexture('#141622', '#a855f7');
+            const facadeTex2 = createBuildingFacadeTexture('#181526', '#38bdf8');
+            const facadeTex3 = createBuildingFacadeTexture('#10141d', '#f43f5e');
+            const facadeTextures = [facadeTex1, facadeTex2, facadeTex3];
+
+            const neonConfigs = [
+                { text: '呪術高専', color: '#38bdf8', bg: '#081b26', border: '#0284c7' },
+                { text: '渋谷事変', color: '#f43f5e', bg: '#280710', border: '#e11d48' },
+                { text: '領域展開', color: '#c084fc', bg: '#1e0936', border: '#9333ea' },
+                { text: '黒閃覚醒', color: '#4ade80', bg: '#062413', border: '#16a34a' }
+            ];
+            const neonMaterials = neonConfigs.map(cfg =>
+                new THREE.MeshBasicMaterial({ map: createNeonTexture(cfg.text, cfg.color, cfg.bg, cfg.border) })
+            );
+
+            for (let side of [-1, 1]) {
+                let currentZ = -58;
+                let bIndex = 0;
+                while (currentZ < 58) {
+                    const width = 12;
+                    const depth = 14;
+                    const height = 22 + ((bIndex * 7) % 18);
+
+                    const bGroup = new THREE.Group();
+                    const posX = side * (22 + width / 2);
+                    bGroup.position.set(posX, 0, currentZ);
+
+                    const bMat = new THREE.MeshLambertMaterial({
+                        map: facadeTextures[bIndex % facadeTextures.length]
+                    });
+                    const bMesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), bMat);
+                    bMesh.position.y = height / 2;
+                    bGroup.add(bMesh);
+
+                    // Letreiro Neon em alguns prédios
+                    if (bIndex % 2 === 0) {
+                        const signMat = neonMaterials[(bIndex + (side > 0 ? 1 : 0)) % neonMaterials.length];
+                        const signMesh = new THREE.Mesh(new THREE.BoxGeometry(0.35, 8.0, 2.2), signMat);
+                        const signX = side === -1 ? (width / 2 + 1.1) : (-width / 2 - 1.1);
+                        signMesh.position.set(signX, 11, 0);
+                        bGroup.add(signMesh);
+                    }
+
+                    scene.add(bGroup);
+                    registerCullable(bGroup, 18, 115);
+
+                    currentZ += depth + 3.5;
+                    bIndex++;
+                }
+            }
+
+            // 4. Postes de Luz com Cones de Luz Volumétrica Falsos (Zero PointLights = 60 FPS!)
+            const poleMat = new THREE.MeshLambertMaterial({ color: 0x27272a });
+            const lampZPositions = [-36, -12, 12, 36];
+
+            lampZPositions.forEach((zPos, idx) => {
+                [-12.5, 12.5].forEach((xPos, sideIdx) => {
+                    const lampGroup = new THREE.Group();
+                    lampGroup.position.set(xPos, 0, zPos);
+
+                    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 9.2, 6), poleMat);
+                    pole.position.y = 4.6;
+                    lampGroup.add(pole);
+
+                    const dir = xPos < 0 ? 1 : -1;
+                    const arm = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.18, 0.18), poleMat);
+                    arm.position.set(dir * 1.1, 9.1, 0);
+                    lampGroup.add(arm);
+
+                    const isCursedLamp = (idx === 1 && sideIdx === 0) || (idx === 2 && sideIdx === 1);
+                    const bulbColor = isCursedLamp ? 0x38bdf8 : 0xfbbf24;
+
+                    const bulbMat = new THREE.MeshBasicMaterial({ color: bulbColor });
+                    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 0.45), bulbMat);
+                    bulb.position.set(dir * 2.1, 8.95, 0);
+                    lampGroup.add(bulb);
+
+                    // Círculo luminoso no chão (substitui PointLight pesada com custo zero de GPU!)
+                    const glowMat = new THREE.MeshBasicMaterial({
+                        color: bulbColor,
+                        transparent: true,
+                        opacity: 0.18,
+                        depthWrite: false
+                    });
+                    const floorGlow = new THREE.Mesh(new THREE.CircleGeometry(5.5, 16), glowMat);
+                    floorGlow.rotation.x = -Math.PI / 2;
+                    floorGlow.position.set(dir * 2.1, 0.03, 0);
+                    lampGroup.add(floorGlow);
+
+                    if (isCursedLamp) {
+                        flickeringLamps.push({ bulbMat, glowMat, seed: Math.random() * 100 });
+                    }
+
+                    scene.add(lampGroup);
+                    registerCullable(lampGroup, 10, 105);
+                });
+            });
+        }
+
+        // ============================================================================
+        // 3. OBJETOS DESTRUTÍVEIS DO CENÁRIO COM FRUSTUM CULLING
+        // ============================================================================
+        function createDestructibleProp(type, x, z, rotY = 0) {
+            const group = new THREE.Group();
+            group.position.set(x, 0, z);
+            group.rotation.y = rotY;
+
+            let hp = 30;
+            let radius = 1.4;
+            let height = 2.0;
+            let color = 0x92400e;
+
+            if (type === 'crate') {
+                color = 0x92400e;
+                const cMat = new THREE.MeshLambertMaterial({ color });
+                const box1 = new THREE.Mesh(new THREE.BoxGeometry(1.7, 1.7, 1.7), cMat);
+                box1.position.y = 0.85;
+                group.add(box1);
+
+                const box2 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), cMat);
+                box2.position.set(0.15, 2.3, -0.1);
+                box2.rotation.y = 0.4;
+                group.add(box2);
+                radius = 1.6;
+                height = 2.8;
+            } else if (type === 'vending') {
+                color = 0xdc2626;
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.8, 3.4, 1.2),
+                    new THREE.MeshLambertMaterial({ color })
+                );
+                body.position.y = 1.7;
+                group.add(body);
+
+                const display = new THREE.Mesh(
+                    new THREE.PlaneGeometry(1.4, 2.1),
+                    new THREE.MeshBasicMaterial({ color: 0xe0f2fe })
+                );
+                display.position.set(0, 2.0, 0.61);
+                group.add(display);
+                hp = 45;
+                radius = 2.0;
+                height = 3.4;
+            } else if (type === 'dumpster') {
+                color = 0x166534;
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(2.8, 1.9, 1.7),
+                    new THREE.MeshLambertMaterial({ color })
+                );
+                body.position.y = 0.95;
+                group.add(body);
+                hp = 50;
+                radius = 2.2;
+                height = 2.0;
+            } else if (type === 'wall') {
+                color = 0x475569;
+                const wall = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.8, 1.5, 0.8),
+                    new THREE.MeshLambertMaterial({ color })
+                );
+                wall.position.y = 0.75;
+                group.add(wall);
+
+                const stripe = new THREE.Mesh(
+                    new THREE.BoxGeometry(3.85, 0.25, 0.85),
+                    new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+                );
+                stripe.position.y = 1.25;
+                group.add(stripe);
+                hp = 40;
+                radius = 2.4;
+                height = 1.6;
+            } else if (type === 'hydrant') {
+                color = 0xb91c1c;
+                const hMat = new THREE.MeshLambertMaterial({ color });
+                const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.42, 1.3, 8), hMat);
+                cyl.position.y = 0.65;
+                group.add(cyl);
+                hp = 20;
+                radius = 1.2;
+                height = 1.5;
+            }
+
+            scene.add(group);
+            const propObj = {
+                type,
+                group,
+                pos: group.position,
+                hp,
+                maxHp: hp,
+                radius,
+                height,
+                color,
+                destroyed: false
+            };
+            destructibles.push(propObj);
+            registerCullable(group, radius + 1.5, 95);
+        }
+
+        function spawnDestructibleProps() {
+            destructibles.forEach(d => scene.remove(d.group));
+            destructibles.length = 0;
+
+            debrisList.forEach(deb => scene.remove(deb.mesh));
+            debrisList.length = 0;
+
+            const layout = [
+                { type: 'vending', x: -13.2, z: -18, rot: Math.PI / 2 },
+                { type: 'vending', x: -13.2, z: -15.5, rot: Math.PI / 2 },
+                { type: 'vending', x: 13.2, z: 6, rot: -Math.PI / 2 },
+                { type: 'vending', x: 13.2, z: 8.5, rot: -Math.PI / 2 },
+                { type: 'dumpster', x: -13.5, z: 4, rot: Math.PI / 2 },
+                { type: 'dumpster', x: 13.5, z: -24, rot: -Math.PI / 2 },
+                { type: 'crate', x: -9.5, z: -7, rot: 0.3 },
+                { type: 'crate', x: 9.2, z: -12, rot: -0.4 },
+                { type: 'crate', x: -8.8, z: 14, rot: 0.2 },
+                { type: 'crate', x: 9.5, z: 19, rot: 0.8 },
+                { type: 'wall', x: -5.5, z: -15, rot: 0.15 },
+                { type: 'wall', x: 5.8, z: -15, rot: -0.15 },
+                { type: 'wall', x: -6.0, z: 10, rot: -0.1 },
+                { type: 'wall', x: 6.0, z: 10, rot: 0.1 },
+                { type: 'hydrant', x: -12.3, z: -5, rot: 0 },
+                { type: 'hydrant', x: 12.3, z: -2, rot: 0 },
+                { type: 'hydrant', x: -12.3, z: 20, rot: 0 },
+                { type: 'hydrant', x: 12.3, z: 24, rot: 0 }
+            ];
+
+            layout.forEach(item => createDestructibleProp(item.type, item.x, item.z, item.rot));
+            totalPropsCount = destructibles.length;
+            updateDestructionUI();
+        }
+
+        function breakProp(prop, impactOrigin, forceMultiplier = 1) {
+            if (prop.destroyed) return;
+            prop.destroyed = true;
+            prop.group.visible = false;
+            playSound('break');
+
+            const pieceCount = 7;
+            const mat = new THREE.MeshLambertMaterial({ color: prop.color });
+            for (let i = 0; i < pieceCount; i++) {
+                const size = 0.35 + Math.random() * 0.4;
+                const mesh = new THREE.Mesh(sharedBoxGeo, mat);
+                mesh.scale.set(size, size, size);
+                mesh.position.set(
+                    prop.pos.x + (Math.random() - 0.5) * 1.2,
+                    0.5 + Math.random() * prop.height * 0.8,
+                    prop.pos.z + (Math.random() - 0.5) * 1.2
+                );
+
+                const dir = new THREE.Vector3().subVectors(mesh.position, impactOrigin).normalize();
+                const speed = (7 + Math.random() * 10) * forceMultiplier;
+
+                scene.add(mesh);
+                debrisList.push({
+                    mesh,
+                    vel: new THREE.Vector3(
+                        dir.x * speed + (Math.random() - 0.5) * 5,
+                        5 + Math.random() * 8 * forceMultiplier,
+                        dir.z * speed + (Math.random() - 0.5) * 5
+                    ),
+                    rotVel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 10
+                    ),
+                    life: 3.0
+                });
+            }
+
+            if (prop.type === 'hydrant') {
+                spawnBurstParticles(prop.pos.clone().add(new THREE.Vector3(0, 1, 0)), 0x38bdf8, 18, 11);
+            }
+
+            updateDestructionUI();
+        }
+
+        function updateDestructionUI() {
+            const broken = destructibles.filter(d => d.destroyed).length;
+            const pct = totalPropsCount > 0 ? Math.round((broken / totalPropsCount) * 100) : 0;
+            document.getElementById('destroyed-count').innerText = `${pct}%`;
+        }
+
+        // ============================================================================
+        // 4. PERSONAGEM JOGÁVEL E BONECO DE TREINO
+        // ============================================================================
+        function buildJujutsuPlayer() {
+            playerGroup = new THREE.Group();
+            playerGroup.position.copy(player.pos);
+
+            const uniformMat = new THREE.MeshLambertMaterial({ color: 0x0f172a });
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xfde68a });
+            const hairMat = new THREE.MeshLambertMaterial({ color: 0xf472b6 });
+            const collarMat = new THREE.MeshLambertMaterial({ color: 0xdc2626 });
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.85, 0.85), uniformMat);
+            torso.position.y = 2.35;
+            playerGroup.add(torso);
+
+            const collar = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.38, 0.92), collarMat);
+            collar.position.y = 3.22;
+            playerGroup.add(collar);
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.15, 1.15), skinMat);
+            head.position.y = 3.95;
+            playerGroup.add(head);
+
+            const hairTop = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.45, 1.26), hairMat);
+            hairTop.position.y = 4.55;
+            playerGroup.add(hairTop);
+
+            leftArmPivot = new THREE.Group();
+            leftArmPivot.position.set(-1.08, 3.1, 0);
+            const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.65, 0.58), uniformMat);
+            leftArm.position.y = -0.68;
+            leftArmPivot.add(leftArm);
+
+            leftHandAura = new THREE.Mesh(
+                new THREE.SphereGeometry(0.42, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 })
+            );
+            leftHandAura.position.y = -1.45;
+            leftArmPivot.add(leftHandAura);
+            playerGroup.add(leftArmPivot);
+
+            rightArmPivot = new THREE.Group();
+            rightArmPivot.position.set(1.08, 3.1, 0);
+            const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.65, 0.58), uniformMat);
+            rightArm.position.y = -0.68;
+            rightArmPivot.add(rightArm);
+
+            rightHandAura = new THREE.Mesh(
+                new THREE.SphereGeometry(0.42, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.65 })
+            );
+            rightHandAura.position.y = -1.45;
+            rightArmPivot.add(rightHandAura);
+            playerGroup.add(rightArmPivot);
+
+            leftLegPivot = new THREE.Group();
+            leftLegPivot.position.set(-0.42, 1.45, 0);
+            const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.45, 0.65), uniformMat);
+            leftLeg.position.y = -0.72;
+            leftLegPivot.add(leftLeg);
+            playerGroup.add(leftLegPivot);
+
+            rightLegPivot = new THREE.Group();
+            rightLegPivot.position.set(0.42, 1.45, 0);
+            const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.62, 1.45, 0.65), uniformMat);
+            rightLeg.position.y = -0.72;
+            rightLegPivot.add(rightLeg);
+            playerGroup.add(rightLegPivot);
+
+            scene.add(playerGroup);
+        }
+
+        function buildCursedDummy() {
+            dummyGroup = new THREE.Group();
+            dummyGroup.position.copy(dummy.pos);
+
+            const curseMat = new THREE.MeshLambertMaterial({
+                color: 0x3b0764,
+                emissive: 0x1e0538
+            });
+
+            dummyMesh = new THREE.Mesh(new THREE.BoxGeometry(1.75, 2.2, 1.0), curseMat);
+            dummyMesh.position.y = 2.4;
+            dummyGroup.add(dummyMesh);
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(1.25, 1.25, 1.25), curseMat);
+            head.position.y = 4.25;
+            dummyGroup.add(head);
+
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0044 });
+            const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.1), eyeMat);
+            eyeL.position.set(-0.3, 4.35, 0.62);
+            dummyGroup.add(eyeL);
+
+            const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.1), eyeMat);
+            eyeR.position.set(0.3, 4.35, 0.62);
+            dummyGroup.add(eyeR);
+
+            const stand = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.25, 0.9, 1.4, 8),
+                new THREE.MeshLambertMaterial({ color: 0x1f2937 })
+            );
+            stand.position.y = 0.7;
+            dummyGroup.add(stand);
+
+            scene.add(dummyGroup);
+        }
+
+        // ============================================================================
+        // 5. PARTÍCULAS E EFEITOS VISUAIS OTIMIZADOS
+        // ============================================================================
+        function spawnBurstParticles(origin, colorHex, count = 14, speedScale = 10) {
+            const mat = new THREE.MeshBasicMaterial({ color: colorHex });
+
+            for (let i = 0; i < count; i++) {
+                const p = new THREE.Mesh(sharedParticleGeo, mat);
+                p.position.copy(origin);
+                scene.add(p);
+
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                const spd = (0.3 + Math.random() * 0.8) * speedScale;
+
+                particles.push({
+                    mesh: p,
+                    vel: new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * spd,
+                        Math.abs(Math.cos(phi)) * spd + 2,
+                        Math.sin(phi) * Math.sin(theta) * spd
+                    ),
+                    life: 0.4 + Math.random() * 0.25,
+                    maxLife: 0.65
+                });
+            }
+        }
+
+        function spawnShockwave(origin, colorHex, maxRadius = 8, duration = 0.35) {
+            const geo = new THREE.RingGeometry(0.4, 0.95, 20);
+            const mat = new THREE.MeshBasicMaterial({
+                color: colorHex,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.9
+            });
+            const ring = new THREE.Mesh(geo, mat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(origin.x, 0.18, origin.z);
+            scene.add(ring);
+
+            shockwaves.push({
+                mesh: ring,
+                elapsed: 0,
+                duration,
+                maxRadius
+            });
+        }
+
+        function triggerScreenShake(intensity = 0.45, duration = 0.22) {
+            camControl.shakeIntensity = Math.max(camControl.shakeIntensity, intensity);
+            camControl.shakeTimer = Math.max(camControl.shakeTimer, duration);
+        }
+
+        function showFloatingText(worldPos, text, colorClass = 'text-sky-400', sizeClass = 'text-2xl') {
+            const screenPos = worldPos.clone().project(camera);
+            if (screenPos.z > 1) return;
+
+            const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+            const el = document.createElement('div');
+            el.className = `floating-text anime-font ${colorClass} ${sizeClass}`;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.innerText = text;
+
+            document.getElementById('floating-container').appendChild(el);
+            setTimeout(() => el.remove(), 800);
+        }
+
+        function showTechniqueBanner(subText, mainText, borderColorClass = 'border-purple-500') {
+            const banner = document.getElementById('Technique-Banner');
+            document.getElementById('banner-sub').innerText = subText;
+            const main = document.getElementById('banner-main');
+            main.innerText = mainText;
+            main.className = `anime-font text-4xl sm:text-5xl text-white px-6 py-1.5 rounded-xl bg-slate-950/90 border-2 ${borderColorClass} shadow-[0_0_35px_rgba(168,85,247,0.8)]`;
+
+            banner.classList.remove('opacity-0', 'scale-75');
+            banner.classList.add('opacity-100', 'scale-100');
+
+            clearTimeout(banner.hideTimeout);
+            banner.hideTimeout = setTimeout(() => {
+                banner.classList.remove('opacity-100', 'scale-100');
+                banner.classList.add('opacity-0', 'scale-75');
+            }, 1400);
+        }
+
+        function highlightSlot(slotId) {
+            const el = document.getElementById(slotId);
+            if (!el) return;
+            el.classList.add('active-press');
+            setTimeout(() => el.classList.remove('active-press'), 150);
+        }
+
+        // ============================================================================
+        // 6. SISTEMA DE COMBATE E HABILIDADES (M1, 1, 2, 3, Q, R)
+        // ============================================================================
+        function getPlayerForward() {
+            return new THREE.Vector3(Math.sin(player.rotY), 0, Math.cos(player.rotY)).normalize();
+        }
+
+        function damageDummy(amount, knockbackVec, isBlackFlash = false) {
+            dummy.hp = Math.max(0, dummy.hp - amount);
+            dummy.vel.add(knockbackVec);
+            dummy.hitFlashTimer = 0.18;
+
+            const worldHead = dummy.pos.clone().add(new THREE.Vector3(0, 4.8, 0));
+            if (isBlackFlash) {
+                showFloatingText(worldHead, `⚡ KOKUSEN! -${amount}`, 'text-red-500', 'text-4xl');
+            } else {
+                showFloatingText(worldHead, `-${amount}`, 'text-amber-300', 'text-2xl');
+            }
+
+            if (dummy.hp <= 0) {
+                spawnBurstParticles(dummy.pos.clone().add(new THREE.Vector3(0, 2.5, 0)), 0xa855f7, 25, 13);
+                showFloatingText(worldHead, 'EXORCIZADO! (+100% CE)', 'text-purple-400', 'text-3xl');
+                setTimeout(() => {
+                    dummy.hp = dummy.maxHp;
+                    dummy.pos.set(0, 0, -4);
+                    dummy.vel.set(0, 0, 0);
+                }, 850);
+            }
+        }
+
+        function triggerM1() {
+            const now = performance.now() / 1000;
+            if (now - player.lastAttackTime < 0.23) return;
+
+            if (now - player.lastAttackTime > 1.35) {
+                player.comboCount = 0;
+            }
+
+            // Se estiver em Shift-Lock, garante que o golpe sai exatamente para onde a câmera olha
+            if (camControl.shiftLock) {
+                player.rotY = camControl.yaw + Math.PI;
+            }
+
+            player.comboCount = (player.comboCount % 4) + 1;
+            player.lastAttackTime = now;
+            player.attackAnimTimer = 0.22;
+            player.attackHand = player.comboCount % 2 === 1 ? 'right' : 'left';
+
+            highlightSlot('slot-m1');
+
+            const forward = getPlayerForward();
+            const hitCenter = player.pos.clone().add(forward.clone().multiplyScalar(3.2)).add(new THREE.Vector3(0, 2.4, 0));
+            const isFourthHit = player.comboCount === 4;
+
+            player.vel.add(forward.clone().multiplyScalar(isFourthHit ? 14 : 6));
+
+            if (isFourthHit) {
+                playSound('blackflash');
+                triggerScreenShake(0.75, 0.32);
+                spawnBurstParticles(hitCenter, 0xff0033, 24, 15);
+                spawnBurstParticles(hitCenter, 0x09090b, 18, 12);
+                spawnShockwave(player.pos.clone().add(forward.clone().multiplyScalar(2.5)), 0xff0033, 9.5, 0.38);
+
+                const vig = document.getElementById('vignette');
+                vig.classList.add('black-flash-screen');
+                setTimeout(() => vig.classList.remove('black-flash-screen'), 200);
+
+                showTechniqueBanner('CRÍTICO ESPACIAL (1 EM 1.000.000)', 'KOKUSEN (BLACK FLASH)!', 'border-red-600');
+            } else {
+                playSound('punch');
+                spawnBurstParticles(hitCenter, 0x38bdf8, 10, 9);
+            }
+
+            const comboPanel = document.getElementById('combo-panel');
+            const comboNum = document.getElementById('combo-number');
+            const comboLbl = document.getElementById('combo-label');
+            comboPanel.classList.remove('opacity-0', 'translate-x-6');
+            comboNum.innerText = isFourthHit ? 'KOKUSEN!' : `${player.comboCount} HIT${player.comboCount > 1 ? 'S' : ''}`;
+            comboNum.className = isFourthHit
+                ? 'anime-font text-6xl text-red-500 drop-shadow-[0_4px_15px_rgba(239,68,68,0.95)]'
+                : 'anime-font text-6xl text-sky-400 drop-shadow-[0_4px_12px_rgba(56,189,248,0.8)]';
+            comboLbl.innerText = isFourthHit ? 'IMPACTO NEGRO!' : 'COMBO AMALDIÇOADO';
+
+            clearTimeout(comboPanel.hideTimer);
+            comboPanel.hideTimer = setTimeout(() => {
+                comboPanel.classList.add('opacity-0', 'translate-x-6');
+            }, 1300);
+
+            if (dummy.pos.distanceTo(player.pos) < 5.2) {
+                const dmg = isFourthHit ? 65 : 18;
+                const kb = forward.clone().multiplyScalar(isFourthHit ? 28 : 8);
+                if (isFourthHit) kb.y = 7;
+                damageDummy(dmg, kb, isFourthHit);
+            }
+
+            const hitRadius = isFourthHit ? 6.2 : 4.2;
+            destructibles.forEach(prop => {
+                if (!prop.destroyed && prop.pos.distanceTo(hitCenter) < hitRadius) {
+                    prop.hp -= isFourthHit ? 60 : 20;
+                    if (prop.hp <= 0) {
+                        breakProp(prop, player.pos, isFourthHit ? 1.5 : 1.0);
+                    }
+                }
+            });
+        }
+
+        function useSkill1() {
+            if (cooldowns[1].current > 0) return;
+            cooldowns[1].current = cooldowns[1].max;
+            highlightSlot('slot-1');
+
+            player.rotY = camControl.yaw + Math.PI;
+            const forward = getPlayerForward();
+            player.attackAnimTimer = 0.35;
+            player.vel.add(forward.clone().multiplyScalar(18));
+
+            playSound('punch');
+            showTechniqueBanner('TÉCNICA DE YUJI ITADORI', 'PUNHO DIVERGENTE!', 'border-sky-400');
+
+            const impactPos = player.pos.clone().add(forward.clone().multiplyScalar(3.5)).add(new THREE.Vector3(0, 2.2, 0));
+            spawnBurstParticles(impactPos, 0x38bdf8, 16, 12);
+            spawnShockwave(impactPos, 0x38bdf8, 7.5, 0.32);
+
+            setTimeout(() => {
+                playSound('blackflash');
+                triggerScreenShake(0.6, 0.28);
+                const delayedPos = player.pos.clone().add(forward.clone().multiplyScalar(4.2)).add(new THREE.Vector3(0, 2.2, 0));
+                spawnBurstParticles(delayedPos, 0x0284c7, 24, 15);
+                spawnShockwave(delayedPos, 0x38bdf8, 11, 0.4);
+
+                if (dummy.pos.distanceTo(delayedPos) < 7.0) {
+                    damageDummy(85, forward.clone().multiplyScalar(26), false);
+                }
+
+                destructibles.forEach(prop => {
+                    if (!prop.destroyed && prop.pos.distanceTo(delayedPos) < 7.5) {
+                        breakProp(prop, player.pos, 1.4);
+                    }
+                });
+            }, 220);
+        }
+
+        function useSkill2() {
+            if (cooldowns[2].current > 0) return;
+            cooldowns[2].current = cooldowns[2].max;
+            highlightSlot('slot-2');
+
+            player.rotY = camControl.yaw + Math.PI;
+            playSound('blue');
+            showTechniqueBanner('ILIMITADO: ATRAÇÃO', 'LAPSO DE TÉCNICA: AZUL!', 'border-sky-500');
+            triggerScreenShake(0.5, 0.4);
+
+            const forward = getPlayerForward();
+            const blueCenter = player.pos.clone().add(forward.clone().multiplyScalar(9.5)).add(new THREE.Vector3(0, 3.0, 0));
+
+            const orbMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(1.6, 14, 14),
+                new THREE.MeshBasicMaterial({ color: 0x0ea5e9 })
+            );
+            orbMesh.position.copy(blueCenter);
+
+            const auraMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(2.6, 12, 12),
+                new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.38, wireframe: true })
+            );
+            orbMesh.add(auraMesh);
+            scene.add(orbMesh);
+
+            spawnShockwave(blueCenter, 0x38bdf8, 14, 0.55);
+            spawnBurstParticles(blueCenter, 0x38bdf8, 22, 13);
+
+            const pullRadius = 15;
+            if (dummy.pos.distanceTo(blueCenter) < pullRadius) {
+                const pullDir = new THREE.Vector3().subVectors(blueCenter, dummy.pos).normalize();
+                damageDummy(95, pullDir.multiplyScalar(24), false);
+            }
+
+            destructibles.forEach(prop => {
+                if (!prop.destroyed && prop.pos.distanceTo(blueCenter) < pullRadius) {
+                    breakProp(prop, blueCenter, 0.9);
+                }
+            });
+
+            let elapsed = 0;
+            const interval = setInterval(() => {
+                elapsed += 0.05;
+                orbMesh.rotation.y += 0.25;
+                orbMesh.scale.setScalar(1 + Math.sin(elapsed * 18) * 0.2);
+
+                debrisList.forEach(deb => {
+                    if (deb.mesh.position.distanceTo(blueCenter) < 16) {
+                        const toCenter = new THREE.Vector3().subVectors(blueCenter, deb.mesh.position).normalize();
+                        deb.vel.add(toCenter.multiplyScalar(3.5));
+                    }
+                });
+
+                if (elapsed >= 0.8) {
+                    clearInterval(interval);
+                    spawnBurstParticles(blueCenter, 0x38bdf8, 20, 14);
+                    scene.remove(orbMesh);
+                }
+            }, 50);
+        }
+
+        function useSkill3() {
+            if (cooldowns[3].current > 0) return;
+            cooldowns[3].current = cooldowns[3].max;
+            highlightSlot('slot-3');
+
+            playSound('purple');
+            triggerScreenShake(1.0, 0.8);
+            showTechniqueBanner('AZUL + VERMELHO = VAZIO IMAGINÁRIO', 'VAZIO ROXO (HOLLOW PURPLE)!', 'border-purple-400');
+
+            const vig = document.getElementById('vignette');
+            vig.classList.add('hollow-purple-screen');
+            setTimeout(() => vig.classList.remove('hollow-purple-screen'), 600);
+
+            player.rotY = camControl.yaw + Math.PI;
+            const forward = getPlayerForward();
+            const spawnPos = player.pos.clone().add(forward.clone().multiplyScalar(4.0)).add(new THREE.Vector3(0, 3.2, 0));
+
+            const purpleGroup = new THREE.Group();
+            purpleGroup.position.copy(spawnPos);
+
+            const core = new THREE.Mesh(
+                new THREE.SphereGeometry(2.8, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0xd8b4fe })
+            );
+            purpleGroup.add(core);
+
+            const outer = new THREE.Mesh(
+                new THREE.SphereGeometry(3.7, 16, 16),
+                new THREE.MeshBasicMaterial({ color: 0x9333ea, transparent: true, opacity: 0.55 })
+            );
+            purpleGroup.add(outer);
+
+            const ring = new THREE.Mesh(
+                new THREE.TorusGeometry(4.2, 0.22, 8, 24),
+                new THREE.MeshBasicMaterial({ color: 0xf0abfc })
+            );
+            purpleGroup.add(ring);
+
+            scene.add(purpleGroup);
+
+            projectiles.push({
+                group: purpleGroup,
+                ring,
+                vel: forward.clone().multiplyScalar(44),
+                radius: 5.5,
+                life: 2.2,
+                hitDummy: false
+            });
+        }
+
+        // Dash na tecla Q (Funciona em 360 graus se estiver em Shift-Lock!)
+        function triggerDash() {
+            if (cooldowns.q.current > 0) return;
+            cooldowns.q.current = cooldowns.q.max;
+            highlightSlot('slot-q');
+
+            playSound('dash');
+            player.isDashing = true;
+            player.dashTimer = 0.22;
+
+            // Direção do Dash respeita para onde o jogador está andando (ou frente se parado)
+            let dashDir = getPlayerForward();
+            const forwardCam = new THREE.Vector3(-Math.sin(camControl.yaw), 0, -Math.cos(camControl.yaw));
+            const rightCam = new THREE.Vector3(Math.cos(camControl.yaw), 0, -Math.sin(camControl.yaw));
+
+            const moveVec = new THREE.Vector3();
+            if (keys['w'] || keys['arrowup']) moveVec.add(forwardCam);
+            if (keys['s'] || keys['arrowdown']) moveVec.sub(forwardCam);
+            if (keys['d'] || keys['arrowright']) moveVec.add(rightCam);
+            if (keys['a'] || keys['arrowleft']) moveVec.sub(rightCam);
+
+            if (moveVec.lengthSq() > 0) {
+                dashDir = moveVec.normalize();
+                if (!camControl.shiftLock) {
+                    player.rotY = Math.atan2(dashDir.x, dashDir.z);
+                }
+            }
+
+            player.vel.x = dashDir.x * 35;
+            player.vel.z = dashDir.z * 35;
+
+            spawnBurstParticles(player.pos.clone().add(new THREE.Vector3(0, 2, 0)), 0xa855f7, 14, 9);
+            spawnShockwave(player.pos, 0xa855f7, 5.5, 0.25);
+        }
+
+        function resetArena() {
+            highlightSlot('slot-r');
+            playSound('blue');
+            spawnDestructibleProps();
+
+            dummy.hp = dummy.maxHp;
+            dummy.pos.set(0, 0, -4);
+            dummy.vel.set(0, 0, 0);
+
+            showTechniqueBanner('REVERSÃO DE CENÁRIO', 'RUA DE SHIBUYA REGENERADA!', 'border-emerald-400');
+            spawnShockwave(player.pos, 0x10b981, 22, 0.5);
+        }
+
+        // ============================================================================
+        // 7. TRAVA-SHIFT (SHIFT-LOCK IGUAL AO ROBLOX) E CONTROLES
+        // ============================================================================
+        function setShiftLockState(active) {
+            camControl.shiftLock = active;
+            const crosshair = document.getElementById('crosshair');
+            const badge = document.getElementById('shiftlock-badge');
+
+            if (active) {
+                crosshair.className = 'crosshair-shiftlock';
+                badge.innerText = 'SHIFT-LOCK: ON';
+                badge.className = 'px-2 py-0.5 text-[10px] font-extrabold bg-sky-500/30 text-sky-200 border border-sky-400 rounded-md shadow-[0_0_12px_rgba(56,189,248,0.6)]';
+                player.rotY = camControl.yaw + Math.PI;
+                if (document.pointerLockElement !== renderer.domElement) {
+                    renderer.domElement.requestPointerLock();
+                }
+            } else {
+                crosshair.className = 'crosshair-free';
+                badge.innerText = 'SHIFT-LOCK: OFF';
+                badge.className = 'px-2 py-0.5 text-[10px] font-extrabold bg-slate-800 text-slate-300 border border-slate-600 rounded-md';
+                if (document.pointerLockElement === renderer.domElement) {
+                    document.exitPointerLock();
+                }
+            }
+        }
+
+        function toggleShiftLock() {
+            initAudio();
+            setShiftLockState(!camControl.shiftLock);
+        }
+
+        function setupControls() {
+            window.addEventListener('keydown', (e) => {
+                if (e.repeat) return;
+                const k = e.key.toLowerCase();
+                keys[k] = true;
+
+                // Tecla SHIFT alterna o Trava-Shift (Shift-Lock) igual ao Roblox!
+                if (e.key === 'Shift') {
+                    e.preventDefault();
+                    toggleShiftLock();
+                    return;
+                }
+
+                if (k === ' ' && player.onGround) {
+                    player.vel.y = 14.5;
+                    player.onGround = false;
+                    spawnBurstParticles(player.pos, 0x38bdf8, 6, 5);
+                }
+                if (k === 'q') triggerDash();
+                if (k === '1') useSkill1();
+                if (k === '2') useSkill2();
+                if (k === '3') useSkill3();
+                if (k === 'r') resetArena();
+            });
+
+            window.addEventListener('keyup', (e) => {
+                keys[e.key.toLowerCase()] = false;
+            });
+
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                initAudio();
+                if (e.button === 0) {
+                    triggerM1();
+                }
+                camControl.isDragging = true;
+                camControl.prevMouseX = e.clientX;
+                camControl.prevMouseY = e.clientY;
+            });
+
+            window.addEventListener('mouseup', () => {
+                camControl.isDragging = false;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === renderer.domElement) {
+                    camControl.yaw -= e.movementX * 0.0032;
+                    camControl.pitch = Math.max(0.06, Math.min(1.15, camControl.pitch + e.movementY * 0.0028));
+                    // Em Shift-Lock, girar o mouse gira o personagem instantaneamente junto com a câmera!
+                    if (camControl.shiftLock) {
+                        player.rotY = camControl.yaw + Math.PI;
+                    }
+                } else if (camControl.isDragging) {
+                    const dx = e.clientX - camControl.prevMouseX;
+                    const dy = e.clientY - camControl.prevMouseY;
+                    camControl.yaw -= dx * 0.0055;
+                    camControl.pitch = Math.max(0.06, Math.min(1.15, camControl.pitch + dy * 0.0045));
+                    camControl.prevMouseX = e.clientX;
+                    camControl.prevMouseY = e.clientY;
+                    if (camControl.shiftLock) {
+                        player.rotY = camControl.yaw + Math.PI;
+                    }
+                }
+            });
+
+            document.getElementById('btn-shift-lock').addEventListener('click', toggleShiftLock);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // ============================================================================
+        // 8. FRUSTUM CULLING EM TEMPO REAL (SÓ RENDERIZA ONDE A CÂMERA OLHA)
+        // ============================================================================
+        function performFrustumCulling() {
+            camera.updateMatrixWorld();
+            projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(projScreenMatrix);
+
+            let visibleCount = 0;
+            let totalActive = 0;
+            const camPos = camera.position;
+
+            for (let i = 0; i < cullableObjects.length; i++) {
+                const item = cullableObjects[i];
+                // Se for um prop já destruído, mantém oculto
+                if (item.obj.userData && item.obj.userData.destroyed) continue;
+                totalActive++;
+
+                item.sphere.center.copy(item.obj.position);
+                item.sphere.center.y += 4;
+
+                const distSq = camPos.distanceToSquared(item.sphere.center);
+                const inView = distSq <= item.maxDistSq && frustum.intersectsSphere(item.sphere);
+
+                item.obj.visible = inView;
+                if (inView) visibleCount++;
+            }
+
+            // Ocultar objetos destrutíveis quebrados
+            for (let i = 0; i < destructibles.length; i++) {
+                if (destructibles[i].destroyed) {
+                    destructibles[i].group.visible = false;
+                }
+            }
+
+            // Atualizar medidor de FPS e Objetos Visíveis a cada 250ms
+            frameCount++;
+            const now = performance.now();
+            if (now - fpsLastTime >= 250) {
+                const fps = Math.min(60, Math.round((frameCount * 1000) / (now - fpsLastTime)));
+                document.getElementById('fps-counter').innerText = fps;
+                document.getElementById('visible-counter').innerText = `${visibleCount}/${totalActive}`;
+                frameCount = 0;
+                fpsLastTime = now;
+            }
+        }
+
+        // ============================================================================
+        // 9. LOOP PRINCIPAL DE ATUALIZAÇÃO (SHIFT-LOCK + FÍSICA + RENDER)
+        // ============================================================================
+        function updateGame(dt) {
+            const elapsedTime = clock.getElapsedTime();
+
+            // 1. Cooldowns
+            for (const key in cooldowns) {
+                const cd = cooldowns[key];
+                if (cd.current > 0) {
+                    cd.current = Math.max(0, cd.current - dt);
+                }
+                const overlay = document.getElementById(`cd-${key}`);
+                if (overlay) {
+                    overlay.style.height = `${(cd.current / cd.max) * 100}%`;
+                }
+            }
+
+            // 2. Vetores de direção baseados na Câmera
+            const forwardCam = new THREE.Vector3(-Math.sin(camControl.yaw), 0, -Math.cos(camControl.yaw));
+            const rightCam = new THREE.Vector3(Math.cos(camControl.yaw), 0, -Math.sin(camControl.yaw));
+
+            const moveVec = new THREE.Vector3();
+            if (keys['w'] || keys['arrowup']) moveVec.add(forwardCam);
+            if (keys['s'] || keys['arrowdown']) moveVec.sub(forwardCam);
+            if (keys['d'] || keys['arrowright']) moveVec.add(rightCam);
+            if (keys['a'] || keys['arrowleft']) moveVec.sub(rightCam);
+
+            let isMoving = false;
+            if (moveVec.lengthSq() > 0 && !player.isDashing) {
+                isMoving = true;
+                moveVec.normalize();
+
+                player.vel.x = moveVec.x * player.speed;
+                player.vel.z = moveVec.z * player.speed;
+
+                // DIFERENÇA CRÍTICA DO TRAVA-SHIFT (SHIFT-LOCK):
+                // - Se Shift-Lock está ATIVO: O personagem NUNCA gira 90 graus ao andar para o lado! Ele mantém as costas viradas para a câmera e faz strafe!
+                // - Se Shift-Lock está DESATIVADO: O personagem gira o corpo na direção em que está andando.
+                if (camControl.shiftLock) {
+                    player.rotY = camControl.yaw + Math.PI;
+                } else {
+                    player.rotY = Math.atan2(moveVec.x, moveVec.z);
+                }
+            } else if (!player.isDashing) {
+                player.vel.x *= Math.pow(0.0008, dt);
+                player.vel.z *= Math.pow(0.0008, dt);
+                if (camControl.shiftLock) {
+                    player.rotY = camControl.yaw + Math.PI;
+                }
+            }
+
+            if (player.isDashing) {
+                player.dashTimer -= dt;
+                if (camControl.shiftLock) {
+                    player.rotY = camControl.yaw + Math.PI;
+                }
+                if (player.dashTimer <= 0) {
+                    player.isDashing = false;
+                }
+            }
+
+            // Gravidade e Pulo
+            if (!player.onGround) {
+                player.vel.y -= 36 * dt;
+            }
+            player.pos.addScaledVector(player.vel, dt);
+
+            if (player.pos.y <= 0) {
+                player.pos.y = 0;
+                player.vel.y = 0;
+                player.onGround = true;
+            }
+
+            player.pos.x = Math.max(-15.2, Math.min(15.2, player.pos.x));
+            player.pos.z = Math.max(-56, Math.min(56, player.pos.z));
+
+            playerGroup.position.copy(player.pos);
+            playerGroup.rotation.y = player.rotY;
+
+            // Animação dos Membros
+            if (player.attackAnimTimer > 0) {
+                player.attackAnimTimer -= dt;
+                if (player.attackHand === 'right') {
+                    rightArmPivot.rotation.x = -Math.PI / 1.8;
+                    leftArmPivot.rotation.x = 0.25;
+                } else {
+                    leftArmPivot.rotation.x = -Math.PI / 1.8;
+                    rightArmPivot.rotation.x = 0.25;
+                }
+            } else if (isMoving) {
+                const walkCycle = elapsedTime * 11;
+                leftLegPivot.rotation.x = Math.sin(walkCycle) * 0.65;
+                rightLegPivot.rotation.x = -Math.sin(walkCycle) * 0.65;
+                leftArmPivot.rotation.x = -Math.sin(walkCycle) * 0.55;
+                rightArmPivot.rotation.x = Math.sin(walkCycle) * 0.55;
+            } else {
+                leftLegPivot.rotation.x *= 0.85;
+                rightLegPivot.rotation.x *= 0.85;
+                leftArmPivot.rotation.x = Math.sin(elapsedTime * 2.5) * 0.08;
+                rightArmPivot.rotation.x = -Math.sin(elapsedTime * 2.5) * 0.08;
+            }
+
+            // 3. Atualizar Boneco de Treino Amaldiçoado
+            dummy.pos.addScaledVector(dummy.vel, dt);
+            dummy.vel.x *= Math.pow(0.015, dt);
+            dummy.vel.z *= Math.pow(0.015, dt);
+
+            if (dummy.pos.y > 0 || dummy.vel.y > 0) {
+                dummy.vel.y -= 32 * dt;
+            }
+            if (dummy.pos.y <= 0) {
+                dummy.pos.y = 0;
+                dummy.vel.y = 0;
+            }
+            dummy.pos.x = Math.max(-14, Math.min(14, dummy.pos.x));
+            dummy.pos.z = Math.max(-54, Math.min(54, dummy.pos.z));
+
+            dummyGroup.position.copy(dummy.pos);
+            dummyGroup.lookAt(player.pos.x, dummy.pos.y, player.pos.z);
+            if (dummy.hitFlashTimer > 0) {
+                dummy.hitFlashTimer -= dt;
+                dummyMesh.material.emissive.setHex(0xdc2626);
+                dummyGroup.rotation.x = -0.28;
+            } else {
+                dummyMesh.material.emissive.setHex(0x1e0538);
+                dummyGroup.rotation.x = 0;
+            }
+
+            updateDummyHUD();
+
+            // 4. Projéteis (Vazio Roxo)
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                const proj = projectiles[i];
+                proj.life -= dt;
+                proj.group.position.addScaledVector(proj.vel, dt);
+                proj.ring.rotation.x += 10 * dt;
+                proj.ring.rotation.y += 12 * dt;
+
+                if (!proj.hitDummy && proj.group.position.distanceTo(dummy.pos.clone().add(new THREE.Vector3(0, 2.5, 0))) < proj.radius + 1.5) {
+                    proj.hitDummy = true;
+                    const kb = proj.vel.clone().normalize().multiplyScalar(38);
+                    kb.y = 10;
+                    damageDummy(180, kb, true);
+                    triggerScreenShake(0.9, 0.35);
+                }
+
+                destructibles.forEach(prop => {
+                    if (!prop.destroyed && prop.pos.distanceTo(proj.group.position) < proj.radius + prop.radius) {
+                        breakProp(prop, proj.group.position, 1.8);
+                    }
+                });
+
+                if (proj.life <= 0) {
+                    scene.remove(proj.group);
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // 5. Destroços (Debris)
+            for (let i = debrisList.length - 1; i >= 0; i--) {
+                const deb = debrisList[i];
+                deb.life -= dt;
+                deb.vel.y -= 28 * dt;
+                deb.mesh.position.addScaledVector(deb.vel, dt);
+                deb.mesh.rotation.x += deb.rotVel.x * dt;
+                deb.mesh.rotation.y += deb.rotVel.y * dt;
+
+                if (deb.mesh.position.y < 0.2) {
+                    deb.mesh.position.y = 0.2;
+                    deb.vel.y *= -0.4;
+                    deb.vel.x *= 0.75;
+                    deb.vel.z *= 0.75;
+                }
+
+                if (deb.life <= 0) {
+                    scene.remove(deb.mesh);
+                    debrisList.splice(i, 1);
+                }
+            }
+
+            // 6. Partículas e Ondas de Choque
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= dt;
+                p.mesh.position.addScaledVector(p.vel, dt);
+                p.mesh.scale.setScalar(Math.max(0.01, p.life / p.maxLife));
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const sw = shockwaves[i];
+                sw.elapsed += dt;
+                const progress = sw.elapsed / sw.duration;
+                const scale = 1 + progress * sw.maxRadius;
+                sw.mesh.scale.set(scale, scale, 1);
+                sw.mesh.material.opacity = Math.max(0, 0.9 * (1 - progress));
+                if (progress >= 1) {
+                    scene.remove(sw.mesh);
+                    shockwaves.splice(i, 1);
+                }
+            }
+
+            // 7. Postes Piscando (Sem custo de PointLight!)
+            flickeringLamps.forEach(item => {
+                const noise = Math.sin(elapsedTime * 23 + item.seed) * Math.cos(elapsedTime * 11);
+                if (noise > 0.65) {
+                    item.bulbMat.color.setHex(0x1e293b);
+                    item.glowMat.opacity = 0.03;
+                } else {
+                    item.bulbMat.color.setHex(0x38bdf8);
+                    item.glowMat.opacity = 0.18;
+                }
+            });
+
+            // 8. Câmera em 3ª Pessoa com Offset de Ombro no Modo Shift-Lock
+            const shoulderOffset = camControl.shiftLock
+                ? rightCam.clone().multiplyScalar(1.65) // Câmera levemente à direita sobre o ombro igual ao Jujutsu Shenanigans!
+                : new THREE.Vector3(0, 0, 0);
+
+            const targetPos = player.pos.clone().add(new THREE.Vector3(0, 3.7, 0)).add(shoulderOffset);
+            const dist = camControl.shiftLock ? 10.8 : camControl.distance;
+
+            const camX = targetPos.x + Math.sin(camControl.yaw) * Math.cos(camControl.pitch) * dist;
+            const camY = targetPos.y + Math.sin(camControl.pitch) * dist;
+            const camZ = targetPos.z + Math.cos(camControl.yaw) * Math.cos(camControl.pitch) * dist;
+
+            if (camControl.shiftLock) {
+                // Resposta imediata e travada atrás do personagem no modo Shift-Lock
+                camera.position.set(camX, Math.max(1.0, camY), camZ);
+            } else {
+                camera.position.lerp(new THREE.Vector3(camX, Math.max(1.0, camY), camZ), 0.25);
+            }
+
+            if (camControl.shakeTimer > 0) {
+                camControl.shakeTimer -= dt;
+                camera.position.x += (Math.random() - 0.5) * camControl.shakeIntensity;
+                camera.position.y += (Math.random() - 0.5) * camControl.shakeIntensity;
+                camera.position.z += (Math.random() - 0.5) * camControl.shakeIntensity;
+            } else {
+                camControl.shakeIntensity = 0;
+            }
+
+            camera.lookAt(targetPos);
+
+            // 9. Executar Frustum Culling antes de renderizar o frame!
+            performFrustumCulling();
+        }
+
+        function updateDummyHUD() {
+            const hud = document.getElementById('dummy-hud');
+            const headPos = dummy.pos.clone().add(new THREE.Vector3(0, 5.6, 0));
+            const projected = headPos.project(camera);
+
+            if (projected.z > 1) {
+                hud.classList.add('hidden');
+                return;
+            }
+
+            hud.classList.remove('hidden');
+            const x = (projected.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(projected.y * 0.5) + 0.5) * window.innerHeight;
+            hud.style.left = `${x}px`;
+            hud.style.top = `${y}px`;
+
+            document.getElementById('dummy-hp-text').innerText = `${Math.ceil(dummy.hp)} / ${dummy.maxHp}`;
+            document.getElementById('dummy-hp-bar').style.width = `${(dummy.hp / dummy.maxHp) * 100}%`;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            updateGame(dt);
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            initWorld();
+            animate();
+        };
+    </script>
+
+    <!-- Script Auxiliar do Modal de Exportação dos 3 Arquivos Separados -->
+    <script>
+        let currentCodeTab = 'html';
+
+        function getClean3Files() {
+            const cssContent = document.getElementById('style-css-source').innerHTML.trim();
+            const jsContent = document.getElementById('game-js-source').innerHTML.trim();
+            const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jujutsu Shenanigans Web - Arena Shibuya</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <!-- Link para o seu arquivo CSS separado -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Cole aqui os elementos da HUD do body -->
+    <div id="vignette"></div>
+    <div id="crosshair" class="crosshair-free"></div>
+    <div id="floating-container" class="fixed inset-0 pointer-events-none z-20 overflow-hidden"></div>
+    <!-- Link para o seu arquivo JavaScript separado -->
+    <script src="game.js"><\/script>
+</body>
+</html>`;
+            return { html: htmlContent, css: cssContent, js: jsContent };
+        }
+
+        function openCodeModal() {
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+            const modal = document.getElementById('code-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            switchCodeTab('html');
+        }
+
+        function closeCodeModal() {
+            const modal = document.getElementById('code-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !document.getElementById('code-modal').classList.contains('hidden')) {
+                closeCodeModal();
+            }
+        });
+
+        function switchCodeTab(tab) {
+            currentCodeTab = tab;
+            const files = getClean3Files();
+            document.getElementById('code-display').textContent = files[tab];
+
+            ['html', 'css', 'js'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === tab) {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-purple-600 text-white';
+                } else {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-extrabold bg-slate-800 text-slate-300 hover:bg-slate-700';
+                }
+            });
+        }
+
+        function copyActiveCode() {
+            const text = document.getElementById('code-display').textContent;
+            const btn = document.getElementById('btn-copy-code');
+            navigator.clipboard.writeText(text).then(() => {
+                btn.innerText = '✅ Copiado para a Área de Transferência!';
+                setTimeout(() => { btn.innerText = '📋 Copiar Arquivo Atual'; }, 1800);
+            }).catch(() => {
+                btn.innerText = '❌ Falha ao copiar';
+                setTimeout(() => { btn.innerText = '📋 Copiar Arquivo Atual'; }, 1800);
+            });
+        }
+    </script>
+</body>
+</html>
