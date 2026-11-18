@@ -145,7 +145,7 @@
         <div class="bg-gray-950/90 border border-red-500/60 px-3 py-1.5 rounded-lg shadow-xl min-w-[150px]">
             <div class="flex justify-between items-center text-[11px] font-bold text-red-300 mb-1">
                 <span>MALDIÇÃO DE TREINO</span>
-                <span id="dummy-hp-text">500 / 500</span>
+                <span id="dummy-hp-text">100 / 100</span>
             </div>
             <div class="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden p-[1px]">
                 <div id="dummy-hp-bar" class="h-full bg-gradient-to-r from-red-600 to-orange-500 rounded-full transition-all duration-100" style="width: 100%;"></div>
@@ -325,6 +325,52 @@
         // 1. SISTEMA DE ÁUDIO SINTETIZADO (WEB AUDIO API)
         // ============================================================================
         let audioCtx = null;
+
+        // Sons gravados (arquivos .mp3) - mele (M1) e soco forte (punho divergente)
+        const fileSounds = {
+            mele: ['mele.mp3'],
+            'soco-forte': ['soco-forte.mp3']
+        };
+        const fileSoundCache = {};
+        function playFileSound(name) {
+            try {
+                const files = fileSounds[name];
+                if (!files) return;
+                if (!fileSoundCache[name]) {
+                    fileSoundCache[name] = files.map(src => {
+                        const a = new Audio(src);
+                        a.preload = 'auto';
+                        return a;
+                    });
+                }
+                const base = fileSoundCache[name][Math.floor(Math.random() * fileSoundCache[name].length)];
+                const instance = base.cloneNode();
+                instance.play().catch(() => {});
+            } catch (e) {}
+        }
+
+        // Som do Kokusen (carregamento de 3s, os 2 últimos são o "raio") - controlado
+        // manualmente para poder ser abortado antes do raio quando a variante não é confirmada.
+        let kokusenAudio = null;
+        function startKokusenSound() {
+            try {
+                if (!kokusenAudio) {
+                    kokusenAudio = new Audio('kokusen.mp3');
+                    kokusenAudio.preload = 'auto';
+                }
+                kokusenAudio.currentTime = 0;
+                kokusenAudio.play().catch(() => {});
+            } catch (e) {}
+        }
+        function stopKokusenSound() {
+            try {
+                if (kokusenAudio) {
+                    kokusenAudio.pause();
+                    kokusenAudio.currentTime = 0;
+                }
+            } catch (e) {}
+        }
+
         function initAudio() {
             if (!audioCtx) {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -467,6 +513,11 @@
             lastAttackTime: 0,
             attackAnimTimer: 0,
             attackHand: 'right',
+            kokusenCharging: false,
+            kokusenHand: 'right',
+            kokusenForward: null,
+            kokusenStartTime: 0,
+            kokusenConfirmTimeout: null,
             isDashing: false,
             dashTimer: 0
         };
@@ -475,8 +526,9 @@
         const dummy = {
             pos: new THREE.Vector3(0, 0, -4),
             vel: new THREE.Vector3(0, 0, 0),
-            hp: 500,
-            maxHp: 500,
+            hp: 100,
+            maxHp: 100,
+            regenRate: 1,
             hitFlashTimer: 0
         };
 
@@ -1199,36 +1251,19 @@
 
             const forward = getPlayerForward();
             const hitCenter = player.pos.clone().add(forward.clone().multiplyScalar(3.2)).add(new THREE.Vector3(0, 2.4, 0));
-            const isFourthHit = player.comboCount === 4;
 
-            player.vel.add(forward.clone().multiplyScalar(isFourthHit ? 14 : 6));
+            player.vel.add(forward.clone().multiplyScalar(6));
 
-            if (isFourthHit) {
-                playSound('blackflash');
-                triggerScreenShake(0.75, 0.32);
-                spawnBurstParticles(hitCenter, 0xff0033, 24, 15);
-                spawnBurstParticles(hitCenter, 0x09090b, 18, 12);
-                spawnShockwave(player.pos.clone().add(forward.clone().multiplyScalar(2.5)), 0xff0033, 9.5, 0.38);
-
-                const vig = document.getElementById('vignette');
-                vig.classList.add('black-flash-screen');
-                setTimeout(() => vig.classList.remove('black-flash-screen'), 200);
-
-                showTechniqueBanner('CRÍTICO ESPACIAL (1 EM 1.000.000)', 'KOKUSEN (BLACK FLASH)!', 'border-red-600');
-            } else {
-                playSound('punch');
-                spawnBurstParticles(hitCenter, 0x38bdf8, 10, 9);
-            }
+            playFileSound('mele');
+            spawnBurstParticles(hitCenter, 0x38bdf8, 10, 9);
 
             const comboPanel = document.getElementById('combo-panel');
             const comboNum = document.getElementById('combo-number');
             const comboLbl = document.getElementById('combo-label');
             comboPanel.classList.remove('opacity-0', 'translate-x-6');
-            comboNum.innerText = isFourthHit ? 'KOKUSEN!' : `${player.comboCount} HIT${player.comboCount > 1 ? 'S' : ''}`;
-            comboNum.className = isFourthHit
-                ? 'anime-font text-6xl text-red-500 drop-shadow-[0_4px_15px_rgba(239,68,68,0.95)]'
-                : 'anime-font text-6xl text-sky-400 drop-shadow-[0_4px_12px_rgba(56,189,248,0.8)]';
-            comboLbl.innerText = isFourthHit ? 'IMPACTO NEGRO!' : 'COMBO AMALDIÇOADO';
+            comboNum.innerText = `${player.comboCount} HIT${player.comboCount > 1 ? 'S' : ''}`;
+            comboNum.className = 'anime-font text-6xl text-sky-400 drop-shadow-[0_4px_12px_rgba(56,189,248,0.8)]';
+            comboLbl.innerText = 'COMBO AMALDIÇOADO';
 
             clearTimeout(comboPanel.hideTimer);
             comboPanel.hideTimer = setTimeout(() => {
@@ -1236,34 +1271,103 @@
             }, 1300);
 
             if (dummy.pos.distanceTo(player.pos) < 5.2) {
-                const dmg = isFourthHit ? 65 : 18;
-                const kb = forward.clone().multiplyScalar(isFourthHit ? 28 : 8);
-                if (isFourthHit) kb.y = 7;
-                damageDummy(dmg, kb, isFourthHit);
+                damageDummy(3.6, forward.clone().multiplyScalar(8), false);
             }
 
-            const hitRadius = isFourthHit ? 6.2 : 4.2;
+            const hitRadius = 4.2;
             destructibles.forEach(prop => {
                 if (!prop.destroyed && prop.pos.distanceTo(hitCenter) < hitRadius) {
-                    prop.hp -= isFourthHit ? 60 : 20;
+                    prop.hp -= 4;
                     if (prop.hp <= 0) {
-                        breakProp(prop, player.pos, isFourthHit ? 1.5 : 1.0);
+                        breakProp(prop, player.pos, 1.0);
                     }
                 }
             });
         }
 
         function useSkill1() {
+            // Segundo aperto dentro da janela de 1s: confirma a variante Kokusen
+            // (precisa ter carregado pelo menos 0.3s, senão o aperto é ignorado)
+            if (player.kokusenCharging) {
+                if (performance.now() / 1000 - player.kokusenStartTime >= 0.3) {
+                    confirmKokusenVariant();
+                }
+                return;
+            }
+
             if (cooldowns[1].current > 0) return;
             cooldowns[1].current = cooldowns[1].max;
             highlightSlot('slot-1');
+            startKokusenCharge();
+        }
 
+        function startKokusenCharge() {
             player.rotY = camControl.yaw + Math.PI;
             const forward = getPlayerForward();
+            player.kokusenForward = forward.clone();
+            player.kokusenHand = player.comboCount % 2 === 1 ? 'left' : 'right';
+            player.kokusenCharging = true;
+            player.kokusenStartTime = performance.now() / 1000;
+
+            startKokusenSound();
+            showTechniqueBanner('TÉCNICA DE YUJI ITADORI', 'CARREGANDO...', 'border-sky-400');
+
+            clearTimeout(player.kokusenConfirmTimeout);
+            player.kokusenConfirmTimeout = setTimeout(() => {
+                if (player.kokusenCharging) abortKokusenCharge();
+            }, 1000);
+        }
+
+        function confirmKokusenVariant() {
+            clearTimeout(player.kokusenConfirmTimeout);
+            player.kokusenCharging = false;
+
+            const forward = player.kokusenForward;
             player.attackAnimTimer = 0.35;
+            player.attackHand = player.kokusenHand;
             player.vel.add(forward.clone().multiplyScalar(18));
 
-            playSound('punch');
+            // Não corta o kokusen.mp3: deixa ele chegar no som do raio naturalmente.
+            showTechniqueBanner('CRÍTICO ESPACIAL (1 EM 1.000.000)', 'KOKUSEN (BLACK FLASH)!', 'border-red-600');
+
+            const impactPos = player.pos.clone().add(forward.clone().multiplyScalar(3.5)).add(new THREE.Vector3(0, 2.2, 0));
+            spawnBurstParticles(impactPos, 0xff0033, 16, 12);
+            spawnBurstParticles(impactPos, 0x09090b, 12, 10);
+            spawnShockwave(impactPos, 0xff0033, 7.5, 0.32);
+
+            const vig = document.getElementById('vignette');
+            vig.classList.add('black-flash-screen');
+            setTimeout(() => vig.classList.remove('black-flash-screen'), 200);
+
+            setTimeout(() => {
+                triggerScreenShake(0.75, 0.32);
+                const delayedPos = player.pos.clone().add(forward.clone().multiplyScalar(4.2)).add(new THREE.Vector3(0, 2.2, 0));
+                spawnBurstParticles(delayedPos, 0xff0033, 24, 15);
+                spawnBurstParticles(delayedPos, 0x09090b, 18, 12);
+                spawnShockwave(delayedPos, 0xff0033, 11, 0.4);
+
+                if (dummy.pos.distanceTo(delayedPos) < 7.0) {
+                    damageDummy(34, forward.clone().multiplyScalar(30), true);
+                }
+
+                destructibles.forEach(prop => {
+                    if (!prop.destroyed && prop.pos.distanceTo(delayedPos) < 7.5) {
+                        breakProp(prop, player.pos, 1.6);
+                    }
+                });
+            }, 220);
+        }
+
+        function abortKokusenCharge() {
+            player.kokusenCharging = false;
+            stopKokusenSound();
+
+            const forward = player.kokusenForward;
+            player.attackAnimTimer = 0.35;
+            player.attackHand = player.kokusenHand;
+            player.vel.add(forward.clone().multiplyScalar(18));
+
+            playFileSound('soco-forte');
             showTechniqueBanner('TÉCNICA DE YUJI ITADORI', 'PUNHO DIVERGENTE!', 'border-sky-400');
 
             const impactPos = player.pos.clone().add(forward.clone().multiplyScalar(3.5)).add(new THREE.Vector3(0, 2.2, 0));
@@ -1271,14 +1375,12 @@
             spawnShockwave(impactPos, 0x38bdf8, 7.5, 0.32);
 
             setTimeout(() => {
-                playSound('blackflash');
-                triggerScreenShake(0.6, 0.28);
                 const delayedPos = player.pos.clone().add(forward.clone().multiplyScalar(4.2)).add(new THREE.Vector3(0, 2.2, 0));
                 spawnBurstParticles(delayedPos, 0x0284c7, 24, 15);
                 spawnShockwave(delayedPos, 0x38bdf8, 11, 0.4);
 
                 if (dummy.pos.distanceTo(delayedPos) < 7.0) {
-                    damageDummy(85, forward.clone().multiplyScalar(26), false);
+                    damageDummy(17, forward.clone().multiplyScalar(26), false);
                 }
 
                 destructibles.forEach(prop => {
@@ -1321,7 +1423,7 @@
             const pullRadius = 15;
             if (dummy.pos.distanceTo(blueCenter) < pullRadius) {
                 const pullDir = new THREE.Vector3().subVectors(blueCenter, dummy.pos).normalize();
-                damageDummy(95, pullDir.multiplyScalar(24), false);
+                damageDummy(19, pullDir.multiplyScalar(24), false);
             }
 
             destructibles.forEach(prop => {
@@ -1681,7 +1783,15 @@
             playerGroup.rotation.y = player.rotY;
 
             // Animação dos Membros
-            if (player.attackAnimTimer > 0) {
+            if (player.kokusenCharging) {
+                if (player.kokusenHand === 'right') {
+                    rightArmPivot.rotation.x = Math.PI / 2.4;
+                    leftArmPivot.rotation.x = 0.1;
+                } else {
+                    leftArmPivot.rotation.x = Math.PI / 2.4;
+                    rightArmPivot.rotation.x = 0.1;
+                }
+            } else if (player.attackAnimTimer > 0) {
                 player.attackAnimTimer -= dt;
                 if (player.attackHand === 'right') {
                     rightArmPivot.rotation.x = -Math.PI / 1.8;
@@ -1718,6 +1828,10 @@
             dummy.pos.x = Math.max(-14, Math.min(14, dummy.pos.x));
             dummy.pos.z = Math.max(-54, Math.min(54, dummy.pos.z));
 
+            if (dummy.hp > 0 && dummy.hp < dummy.maxHp) {
+                dummy.hp = Math.min(dummy.maxHp, dummy.hp + dummy.regenRate * dt);
+            }
+
             dummyGroup.position.copy(dummy.pos);
             dummyGroup.lookAt(player.pos.x, dummy.pos.y, player.pos.z);
             if (dummy.hitFlashTimer > 0) {
@@ -1743,7 +1857,7 @@
                     proj.hitDummy = true;
                     const kb = proj.vel.clone().normalize().multiplyScalar(38);
                     kb.y = 10;
-                    damageDummy(180, kb, true);
+                    damageDummy(36, kb, true);
                     triggerScreenShake(0.9, 0.35);
                 }
 
